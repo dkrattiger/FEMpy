@@ -1,7 +1,6 @@
 import math
 import numpy as np
 
-
 class Material:
 
     def extendElasticProps(self):
@@ -61,43 +60,22 @@ class Material:
         self.extendElasticProps()
 
         # extract necessary properties
-        # lam = self.lam
-        # G = self.G
-        nu = self.nu
-        E = self.E
+        lam = self.lam
+        G = self.G
 
         # plane strain elasticity matrix
-        # D = np.array([[lam+2*G, lam, 0],
-        #               [lam, lam+2*G, 0],
-        #               [0, 0, G]])
-
-        D = (E/((1+nu)*(1-2*nu)))* np.array([[1-nu, nu, 0],
-                                             [nu, 1-nu, 0],
-                                             [0, 0, (1-2*nu)/2]])
+        D = np.array([[lam+2*G, lam, 0],
+                      [lam, lam+2*G, 0],
+                      [0, 0, G]])
         return(D)
 
 
-    def ElastMatPlaneStress(self):
+class element3D(object):
 
-        # expand properties
-        self.extendElasticProps()
-
-        # extract necessary properties
-        nu = self.nu
-        E = self.E
-
-        # plane strain elasticity matrix
-        D = (E/(1-nu**2))*np.array([[1, nu, 0],
-                                    [nu, 1, 0],
-                                    [0, 0, (1-nu)/2]])
-        return(D)
-
-
-class element2D(object):
-
-    def __init__(self, x, y):
+    def __init__(self, x, y, z):
         self.x = x
         self.y = y
+        self.z = z
 
         pass
 
@@ -133,16 +111,18 @@ class element2D(object):
         return L, dL
 
 
-class Quad(element2D):
+class Brick(element3D):
 
-    def __init__(self, x, y):
-        n = int(np.sqrt(np.shape(x)[0])-1)
+    def __init__(self, x, y, z):
+        n = int(np.shape(x)[0]**(1/3)-1)
         self.x = x
         self.y = y
+        self.z = z
         self.n = n
         pass
 
-    def perimeterIndex(self):
+    def facePerimeterIndex(self):
+        # TODO Need to update this function to reflect  the 3D geometry
         m = self.n+1
         i_perim = np.concatenate(
             (np.arange(0, m-1),
@@ -151,10 +131,10 @@ class Quad(element2D):
              np.arange(m**2-m, m-1, -m)))
         return i_perim
 
-    def KM(self, mat, type = 'plane_strain'):
+    def KM(self, mat):
 
         # group coordinates together
-        X = np.transpose(np.vstack((self.x, self.y)))
+        X = np.transpose(np.vstack((self.x, self.y, self.z)))
 
         #  element order
         n = self.n
@@ -163,10 +143,7 @@ class Quad(element2D):
         m = n+1
 
         # material properties
-        if type == 'plane_strain':
-            D = mat.ElastMatPlaneStrain()
-        elif type == 'plane_stress':
-            D = mat.ElastMatPlaneStress()
+        D = mat.ElastMatPlaneStrain()
         rho = mat.rho
 
         # gauss quadrature points and weights
@@ -177,24 +154,22 @@ class Quad(element2D):
         zetas = np.linspace(-1, 1, m)
         L, dL = self.ShapeFuncEval1D(zetas, zg)
 
-        #  preallocate mass and stiffness matrices
+        #  preallocate mass and stiffnes matrices
         Ke = np.zeros((2*m**2, 2*m**2))
         Me = np.zeros((2*m**2, 2*m**2))
 
         #  loop through quadrature points
-        for i in range(d):
-            for j in range(d):
+        for i in range(0, d):
+            for j in range(0, d):
 
                 # use tensor product of 1D shape functions to get the 2D
                 # shapefunctions
                 #  N = np.outer(L[:, i], L[:, j]).flatten()
                 #  dNdz = np.outer(dL[:, i], L[:, j]).flatten()
                 #  dNde = np.outer(L[:, i], dL[:, j]).flatten()
-                # I think I could do this with the @ operator
                 N = np.outer(L[:, i], L[:, j]).flatten('F')
                 dNdz = np.outer(dL[:, i], L[:, j]).flatten('F')
                 dNde = np.outer(L[:, i], dL[:, j]).flatten('F')
-
 
                 # populate N matrix
                 Nmat = np.zeros((2, 2*m**2))
@@ -221,75 +196,82 @@ class Quad(element2D):
 
                 # add contribution from current quadrature point into mass and
                 # stiffness matrices
-                # Ke = Ke + wg[i]*wg[j]*Jdet*np.dot(
-                #     np.transpose(B), np.dot(D, B))
-                # Me = Me + wg[i]*wg[j]*Jdet*rho*np.dot(np.transpose(Nmat), Nmat)
-
-                Ke = Ke + wg[i]*wg[j]*Jdet*(B.T @ D @ B)
-                Me = Me + wg[i]*wg[j]*Jdet*rho*(Nmat.T @ Nmat)
+                Ke = Ke + wg[i]*wg[j]*Jdet*np.dot(
+                    np.transpose(B), np.dot(D, B))
+                Me = Me + wg[i]*wg[j]*Jdet*rho*np.dot(np.transpose(Nmat), Nmat)
 
         return Ke, Me
 
-# class SquareSimple(object):
 
-#     def __init__(self, mrl, n):
-#         self.n = n
-#         self.mrl = mrl
-#         self.nodecoords()
-#         pass
+#  class mesh:
+#
+#      def __init__(self, n, mrl):
+#          self.n = n
+#          self.mrl = mrl
+#          pass
+#
 
-#     def nodecoords(self):
+class SquareSimple(object):
 
-#         # mesh refinement level (number of divisions along specific mesh
-#         # segments)
-#         mrl = self.mrl
+    def __init__(self, mrl, n):
+        self.n = n
+        self.mrl = mrl
+        self.nodecoords()
+        pass
 
-#         # element order
-#         n = self.n
+    def nodecoords(self):
 
-#         # square "radius"
-#         r_s = 0.5
+        # mesh refinement level (number of divisions along specific mesh
+        # segments)
+        mrl = self.mrl
 
-#         # x and y coordinates of small square
-#         x = np.linspace(-r_s, r_s, n*mrl+1)
-#         x, y = np.meshgrid(x, x)
-#         x = np.transpose(x, (1, 0))
-#         y = np.transpose(y, (1, 0))
+        # element order
+        n = self.n
 
-#         # flatten and collect coordinates
-#         x = x.flatten()
-#         y = y.flatten()
-#         coordinates = np.transpose(np.vstack((x, y)))
+        # square "radius"
+        r_s = 0.5
 
-#         # form element node index for interior square (each row containst the node
-#         # indices for an element)
-#         index_s = np.reshape(
-#             np.arange(0, (n*mrl+1)**2),
-#             ((n*mrl+1), (n*mrl+1)))
-#         #  emat = np.zeros((mrl**2, (n+1)**2), dtype='int')
-#         emat = []
-#         for i in range(0, mrl):
-#             for j in range(0, mrl):
-#                 emat.append(index_s[(i*n):(i*n+n+1),
-#                                     (j*n):(j*n+n+1)].flatten('F'))
+        # x and y coordinates of small square
+        x = np.linspace(-r_s, r_s, n*mrl+1)
+        x, y = np.meshgrid(x, x)
+        x = np.transpose(x, (1, 0))
+        y = np.transpose(y, (1, 0))
+
+        # flatten and collect coordinates
+        x = x.flatten()
+        y = y.flatten()
+        coordinates = np.transpose(np.vstack((x, y)))
+
+        # form element node index for interior square (each row containst the node
+        # indices for an element)
+        index_s = np.reshape(
+            np.arange(0, (n*mrl+1)**2),
+            ((n*mrl+1), (n*mrl+1)))
+        #  emat = np.zeros((mrl**2, (n+1)**2), dtype='int')
+        emat = []
+        for i in range(0, mrl):
+            for j in range(0, mrl):
+                emat.append(index_s[(i*n):(i*n+n+1),
+                                    (j*n):(j*n+n+1)].flatten('F'))
 
 
-#         # Distort nodes to form a more interesting inclusion shape
-#         materialIndex = np.zeros((mrl**2),dtype=int)
+        # Distort nodes to form a more interesting inclusion shape
+        materialIndex = np.zeros((mrl**2),dtype=int)
 
-#         #  return coordinates, emat, colorvec
-#         self.coordinates = coordinates
-#         self.eleNodeIndex = emat
-#         self.materialIndex = materialIndex
+        #  return coordinates, emat, colorvec
+        self.coordinates = coordinates
+        self.eleNodeIndex = emat
+        self.materialIndex = materialIndex
 
-#         pass
+        pass
 
 class mesh(object):
 
-    def __init__(self, n):
+    def __init__(self, mrl, n):
 
-        # # element order
+        # element order and mesh refinement level
         self.n = n
+        self.mrl = mrl
 
         # node coordinates, element node index list, and material index
         coordinates, eleNodeIndex, materialIndex = self.nodecoords()
@@ -308,23 +290,7 @@ class mesh(object):
 
     def updateCoordinates(self,coordinatesNew):
 
-
-
-
-        # coordinates = self.coordinates
-        eleNodeIndex = self.eleNodeIndex
-        elements = self.elements
-
-        # update element coordinates
-        for i in range(len(elements)):
-            xEle = coordinatesNew[eleNodeIndex[i], 0]
-            yEle = coordinatesNew[eleNodeIndex[i], 1]
-            elements[i].x = xEle
-            elements[i].y = yEle
-
-        self.elements = elements
         self.coordinates = coordinatesNew
-        pass
 
     def elementList(self):
 
@@ -335,18 +301,16 @@ class mesh(object):
         for i in range(0, len(eleNodeIndex)):
             xEle = coordinates[eleNodeIndex[i], 0]
             yEle = coordinates[eleNodeIndex[i], 1]
-            elements.append(Quad(xEle, yEle))
+            elements.append(QuadPlaneStrain(xEle, yEle))
 
         return elements
 
     #  def featureEdges(self.coordinates)
     def boundaryEdges(self):
 
-        # look for boundaries of structure and between different materials
         unique_mats = np.unique(self.materialIndex)
         edgeList = []
         count = 0  # counter variable for number of boundary lists
-
         for j in range(0, len(unique_mats)):
 
             # index of which elements are made from current material
@@ -355,27 +319,15 @@ class mesh(object):
 
             edgeArray = np.empty((2,0), int)
 
-            # count = 0
             #  for i in range(0,nEle):
+            for i in matInd:
+                iOutline = self.elements[i].perimeterIndex()
+                iOutline = self.eleNodeIndex[i][iOutline]
+                ind2 = np.hstack((np.arange(1,np.shape(iOutline)[0]),0))
+                edgeArrayEle = np.vstack((iOutline,iOutline[ind2]))
+                edgeArray = np.hstack((edgeArray,edgeArrayEle))
 
-            # Create a set of indices that define the edges of every element in the mesh
-            # (the goal is to find the outer boundaries by looking for unique edges)
-            Outlines1 = [eleNodeIndex[element.perimeterIndex()]
-                            for element, eleNodeIndex in
-                                zip(self.elements, self.eleNodeIndex)]
-
-            iPerim = self.elements[0].perimeterIndex()
-            # iOutline = self.eleNodeIndex[0][iPerim]
-            ind2 = np.hstack((np.arange(1,np.shape(iPerim)[0]),0))
-
-            Outlines2 = [(eleNodeIndex[element.perimeterIndex()])[ind2]
-                            for element, eleNodeIndex in
-                                zip(self.elements, self.eleNodeIndex)]
-
-            Outlines1 = np.concatenate(Outlines1,axis=0)
-            Outlines2 = np.concatenate(Outlines2,axis=0)
-
-            edgeArray = np.vstack((Outlines1,Outlines2)).T
+            edgeArray = np.transpose(edgeArray)
 
             # Keep edges that show up exactly once in edge Array
             edgeArray = np.sort(edgeArray, axis=1)
@@ -425,33 +377,9 @@ class mesh(object):
         return edgeList
 
 
-class squareWithInclusion(mesh):
 
 
-    def __init__(self, mrl, n):
-
-        # element order and mesh refinement level
-        self.mrl = mrl
-
-        # run constructor for base class
-        mesh.__init__(self,n)
-
-        # self.mrl = mrl
-
-        # node coordinates, element node index list, and material index
-        # coordinates, eleNodeIndex, materialIndex = self.nodecoords()
-        # self.coordinates = coordinates
-        # self.eleNodeIndex = eleNodeIndex
-        # self.materialIndex = materialIndex
-
-        # # element list
-        # elements = self.elementList()
-        # self.elements = elements
-
-        # # boundary edges
-        # edges = self.boundaryEdges()
-        # self.edges = edges
-        pass
+class SquareWithInclusion(mesh):
 
     def nodecoords(self):
 
@@ -644,79 +572,12 @@ class squareWithInclusion(mesh):
 
         # Distort nodes to form a more interesting inclusion shape
         coordinates = distortnodes(coordinates)
-        materialIndex = np.concatenate(([1] * (mrlt**2), np.tile(
-            np.concatenate(([1] * (mrlt * mrlr), [0] * (mrlr * mrlt)),
+        materialIndex = np.concatenate(([0] * (mrlt**2), np.tile(
+            np.concatenate(([0] * (mrlt * mrlr), [1] * (mrlr * mrlt)),
                            axis=0), 4)), axis=0)
 
 
         return coordinates, emat, materialIndex
-
-class regularRectangle(mesh):
-
-    def __init__(self,nx,ny,Lx,Ly,n):
-
-        # number of elements in each direction of mesh
-        self.nx = nx
-        self.ny = ny
-
-        # mesh physical dimensions
-        self.Lx = Lx
-        self.Ly = Ly
-
-        # run constructor for base class
-        mesh.__init__(self,n)
-
-        pass
-
-    def nodecoords(self):
-
-
-        n = self.n
-        nx = self.nx
-        ny = self.ny
-        Lx = self.Lx
-        Ly = self.Ly
-
-        # x and y coordinates of small square
-        x = np.linspace(0, Lx, n*nx+1)
-        y = np.linspace(0, Ly, n*ny+1)
-        x, y = np.meshgrid(x, y)
-
-        x = x.T
-        y = y.T
-        # x = np.transpose(x, (1, 0))
-        # y = np.transpose(y, (1, 0))
-
-        # collect small-square coordinates and quadrant coordinates into a
-        # coordinate array. Note quadrant coordinates are rotated and appended 4
-        # times.
-        # x = np.vstack((x_ss, x_quad, -y_quad, -x_quad, y_quad))
-        # y = np.vstack((y_ss, y_quad, x_quad, -y_quad, -x_quad))
-
-        # flatten and collect coordinates
-        x = x.flatten()
-        y = y.flatten()
-        coordinates = np.vstack((x, y)).T
-
-        # form element node index for interior square (each row containst the node
-        # indices for an element)
-        index = np.reshape(
-            np.arange(0, (n*nx+1)*(n*ny+1)),
-            ((n*nx+1), (n*ny+1)))
-        emat = []
-        for i in range(0, nx):
-            for j in range(0, ny):
-                emat.append(index[(i*n):(i*n+n+1),
-                                       (j*n):(j*n+n+1)].flatten('F'))
-
-
-
-        materialIndex = np.zeros((nx*ny),dtype=int)
-
-        return coordinates, emat, materialIndex
-
-
-
 
 def unique_rows(A, return_index=False, return_inverse=False):
     """
@@ -752,7 +613,7 @@ def plotEdges(mesh):
 
     return lineHandle
 
-def plotElements(mesh, C = []):
+def plotElements(mesh):
 
     import matplotlib
     from matplotlib.patches import Polygon
@@ -781,43 +642,19 @@ def plotElements(mesh, C = []):
         # create patch-index array
         patchindex[i, :] = mesh.eleNodeIndex[i][iPerimeter]
 
-    # facecolorlimits = [(0.25, 0.25, 0.25), (0.8, 0.8, 0.8)]
-    # edgecolorlimits = [(0.20, 0.20, 0.20), (0.6, 0.6, 0.6)]
-
-    faceColorLimits = [np.array([0.8, 0.8, 0.8]), np.array([0.25, 0.25, 0.25])]
-    edgeColorLimits = [np.array([0.6, 0.6, 0.6]), np.array([0.20, 0.20, 0.20])]
-    if len(C) == 0:
-        C = mesh.materialIndex
-
-    if type(C) == list:
-        C = np.asarray(C)
-
-    # print(np.shape(C))j
-    # print(len(C))
-    # for i in range(np.shape(C)[0]):
-    #     facecolors[i] =
-    Cmin = np.amin(C)
-    Cmax = np.amax(C)
-    if Cmin == Cmax:
-        Cnorm = C*0
-    else:
-        Cnorm = (C-Cmin)/(Cmax-Cmin)
-
-    faceColors = [tuple(faceColorLimits[0] +
-        (c)*(faceColorLimits[1]-faceColorLimits[0])) for c in Cnorm]
-
-    edgeColors = [tuple(edgeColorLimits[0] +
-        (c)*(edgeColorLimits[1]-edgeColorLimits[0])) for c in Cnorm]
-
-
-    # facecolors = [fcolors[C[i]] for i in range(0, np.shape(C)[0])]
+    fcolors = [(0.25, 0.25, 0.25), (0.8, 0.8, 0.8)]
+    ecolors = [(0.20, 0.20, 0.20), (0.6, 0.6, 0.6)]
+    flist = [
+        fcolors[mesh.materialIndex[i]]
+        for i in range(0, np.shape(mesh.materialIndex)[0])]
     #  flist = fcolors[mesh.materialIndex]
-    # edgecolors = [ecolors[C[i]] for i in range(0, np.shape(C)[0])]
+    elist = [
+        ecolors[mesh.materialIndex[i]]
+        for i in range(0, np.shape(mesh.materialIndex)[0])]
     #  elist = ecolocs[mesh.materialIndex]
     p = PatchCollection(patches, cmap=matplotlib.cm.jet,
-                        edgecolors=edgeColors,
-                        facecolors=faceColors)
-
+                        edgecolors=elist,
+                        facecolors=flist)
 
     #  ax.add_collection(p)
     ax = plt.gca()
@@ -835,9 +672,9 @@ def plotElements(mesh, C = []):
     return patchHandle
 
 
-def plotMesh(mesh, C = []):
+def plotMesh(mesh):
 
-    patchHandle = plotElements(mesh,C)
+    patchHandle = plotElements(mesh)
     lineHandle = plotEdges(mesh)
 
     return patchHandle, lineHandle
